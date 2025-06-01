@@ -1,3 +1,4 @@
+import 'package:event/event_analysis.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -78,6 +79,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final picker = ImagePicker();
     final allEvents = Provider.of<EventProvider>(context, listen: false).events;
     final suggestedTitles = widget.getSuggestedTitles(allEvents);
+    String status = 'Belum Dilakukan';
 
     showDialog(
       context: context,
@@ -246,10 +248,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                   Provider.of<EventProvider>(context, listen: false)
                       .addEvent(event);
+                  _checkAndAddRecommendation(context);
                   _scheduleNotification(event);
-                  titleController.dispose();
-                  titleFocusNode.dispose();
-                  descriptionController.dispose();
                   titleController.dispose();
                   titleFocusNode.dispose();
                   descriptionController.dispose();
@@ -261,6 +261,92 @@ class _CalendarScreenState extends State<CalendarScreen> {
           );
         });
       },
+    );
+  }
+
+  void _confirmDelete(
+      BuildContext context, Event event, EventProvider provider) {
+    if (event.isRecommendation) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Hentikan Rekomendasi?'),
+          content: Text('Ingin menghentikan rekomendasi event ini?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: Text('Batal')),
+            TextButton(
+              onPressed: () {
+                provider.deleteEvent(event.id);
+                Navigator.pop(ctx);
+              },
+              child: Text('Hapus'),
+            ),
+            TextField(
+              controller: TextEditingController(text: event.description),
+              decoration: InputDecoration(labelText: 'Description'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      provider.deleteEvent(event.id);
+    }
+  }
+
+  void _checkAndAddRecommendation(BuildContext context) {
+    final provider = Provider.of<EventProvider>(context, listen: false);
+    final events = provider.events;
+
+    // Contoh logika sederhana: jika ada 3 event dengan judul sama, buat rekomendasi
+    final Map<String, List<Event>> groupedByTitle = {};
+    for (var e in events) {
+      if (!e.isRecommendation) {
+        groupedByTitle.putIfAbsent(e.title, () => []).add(e);
+      }
+    }
+
+    for (var entry in groupedByTitle.entries) {
+      if (entry.value.length >= 3 &&
+          !events.any((e) => e.isRecommendation && e.title == entry.key)) {
+        final sampleEvent = entry.value.first;
+        final recommendedEvent = Event(
+          id: Uuid().v4(),
+          title: entry.key,
+          description: 'Rekomendasi berdasarkan pola aktivitas Anda.',
+          dateTime: sampleEvent.dateTime
+              .add(Duration(days: 7)), // jadwal minggu depan
+          isRecommendation: true,
+          status: EventStatus.upcoming,
+          people: sampleEvent.people,
+        );
+
+        provider.addEvent(recommendedEvent);
+      }
+    }
+  }
+
+  Widget _buildDot(Color color) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 1.5),
+      width: 7.0,
+      height: 7.0,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+      ),
+    );
+  }
+
+  Widget _buildEventMarker(List<Event> events) {
+    final isRecommended = events.any((e) => e.isRecommendation);
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isRecommended ? Colors.blue : Colors.red,
+      ),
     );
   }
 
@@ -296,7 +382,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<EventProvider>(context);
-    final selectedEvents = provider.events
+    final allEvents = provider.events
         .where(
             (event) => isSameDay(event.dateTime, _selectedDay ?? _focusedDay))
         .toList();
@@ -319,13 +405,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
             eventLoader: (day) => provider.events
                 .where((e) => isSameDay(e.dateTime, day))
                 .toList(),
+            calendarBuilders: CalendarBuilders(
+              markerBuilder: (context, date, events) {
+                final recommended =
+                    events.any((e) => e.isRecommendation == true);
+                final important = events.any((e) => e.status == 'Selesai');
+
+                List<Widget> markers = [];
+
+                if (recommended) {
+                  markers.add(_buildDot(Colors.blue));
+                }
+                if (important) {
+                  markers.add(_buildDot(Colors.pink));
+                }
+
+                if (events.isNotEmpty) {
+                  return Positioned(
+                    bottom: 1,
+                    child: _buildEventMarker(events),
+                  );
+                }
+              },
+            ),
           ),
           const SizedBox(height: 8),
           Expanded(
             child: ListView.builder(
-              itemCount: selectedEvents.length,
+              itemCount: allEvents.length,
               itemBuilder: (ctx, i) {
-                final event = selectedEvents[i];
+                final event = allEvents[i];
                 return ListTile(
                   leading: event.imagePath != null
                       ? Image.file(File(event.imagePath!),
@@ -340,12 +449,42 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Text("People: ${event.people.join(', ')}"),
                     ],
                   ),
-                  trailing: IconButton(
-                    icon: Icon(Icons.delete),
-                    onPressed: () {
-                      provider.deleteEvent(event.id);
-                      flutterLocalNotificationsPlugin.cancel(event.hashCode);
+                  trailing: PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert),
+                    onSelected: (String value) {
+                      if (value == 'delete') {
+                        provider.deleteEvent(event.id);
+                        flutterLocalNotificationsPlugin.cancel(event.hashCode);
+                      } else {
+                        // Ubah status event
+                        provider.updateEventStatus(
+                            event.id,
+                            value == 'Selesai'
+                                ? EventStatus.done
+                                : value == 'Tunda'
+                                    ? EventStatus.postponed
+                                    : EventStatus.upcoming);
+                      }
                     },
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                      const PopupMenuItem<String>(
+                        value: 'Selesai',
+                        child: Text('Tandai Selesai'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'Belum Dilakukan',
+                        child: Text('Tandai Belum Dilakukan'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'Tunda',
+                        child: Text('Tandai Tunda'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'delete',
+                        child: Text('Hapus Event'),
+                      ),
+                    ],
                   ),
                 );
               },
@@ -353,9 +492,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
-        onPressed: () => _addEventDialog(context),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'add',
+            child: Icon(Icons.add),
+            onPressed: () => _addEventDialog(context),
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: 'analyze',
+            backgroundColor: Colors.deepPurple,
+            child: Icon(Icons.pie_chart),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => EventAnalysisScreen()),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

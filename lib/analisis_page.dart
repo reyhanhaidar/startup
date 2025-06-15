@@ -1,32 +1,26 @@
+import 'package:event/event_provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'home.dart';
 import 'date_page.dart';
+import 'login.dart';
+import 'main.dart';
 
 class AnalisisPage extends StatelessWidget {
-  const AnalisisPage({Key? key}) : super(key: key);
+  const AnalisisPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final provider = Provider.of<EventProvider>(context);
+    final completed = provider.completedEvents;
+    final stats = context.watch<EventProvider>();
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        backgroundColor: Colors.teal,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.account_circle, color: Colors.white),
-          onPressed: () {},
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
-            onPressed: () {},
-          ),
-        ],
-      ),
+      appBar: _buildAppBar(context),
+      drawer: _buildDrawer(context),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -53,13 +47,13 @@ class AnalisisPage extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildDateItem('Senin'),
-                _buildDateItem('Selasa'),
-                _buildDateItem('Rabu'),
-                _buildDateItem('Kamis'),
-                _buildDateItem('Jumat'),
-                _buildDateItem('Sabtu'),
-                _buildDateItem('Minggu'),
+                _buildDateItem('Senin', 0, 0),
+                _buildDateItem('Selasa', 0, 0),
+                _buildDateItem('Rabu', 0, 0),
+                _buildDateItem('Kamis', 0, 0),
+                _buildDateItem('Jumat', 0, 0),
+                _buildDateItem('Sabtu', 0, 0),
+                _buildDateItem('Minggu', 0, 0),
               ],
             ),
 
@@ -83,64 +77,22 @@ class AnalisisPage extends StatelessWidget {
             const SizedBox(height: 16),
 
             // Chart Container
-            Container(
-              width: double.infinity,
-              height: 200,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Stack(
-                children: [
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CustomPaint(
-                          size: const Size(120, 120),
-                          painter: PieChartPainter(),
-                        ),
-                      ],
-                    ),
+            GestureDetector(
+              onTapUp: (d) => _showTooltip(context, stats),
+              child: Container(
+                width: double.infinity,
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: CustomPaint(
+                  size: const Size(120, 120),
+                  painter: PieChartPainter(
+                    doneRatio: stats.doneRatio,
+                    failRatio: stats.failRatio,
                   ),
-                  Positioned(
-                    bottom: 40,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: Colors.grey,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(width: 60),
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: const BoxDecoration(
-                            color: Colors.grey,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Center(
-                            child: Text(
-                              '1st',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
 
@@ -167,14 +119,43 @@ class AnalisisPage extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: _buildAnalysisCard('Selesai', 'Presentase'),
+                  child: _buildAnalysisCard('Selesai', stats.doneRatio),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: _buildAnalysisCard('Tidak Selesai', 'Presentase'),
+                  child: _buildAnalysisCard('Tidak Selesai', stats.failRatio),
                 ),
               ],
             ),
+
+            const SizedBox(height: 32),
+
+            // Hasil Poin
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Poin',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                Icon(Icons.arrow_forward, color: Colors.grey[600]),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text("Total Poin: ${provider.totalPoints}",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            Text("Event Diselesaikan:"),
+            ...completed.map((e) => ListTile(
+                  title: Text(e.title),
+                  subtitle: Text(DateFormat('dd/MM/yyyy').format(e.dateTime)),
+                  trailing: Text("+${e.point} poin"),
+                )),
+            SizedBox(height: 20),
           ],
         ),
       ),
@@ -222,98 +203,203 @@ class AnalisisPage extends StatelessWidget {
     );
   }
 
-  Widget _buildDateItem(String day) {
-    return Column(
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
-            borderRadius: BorderRadius.circular(8),
-          ),
+  void _showTooltip(BuildContext context, EventProvider stats) {
+    final done = stats.done;
+    final fail = stats.fail;
+    final total = stats.total;
+    final pending = total - done - fail;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Rincian Kegiatan'),
+        content: Text(
+          'Selesai  : $done\n'
+          'Tidak selesai : $fail\n'
+          'Pending : $pending',
         ),
-        const SizedBox(height: 8),
-        Text(
-          day,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[700],
+        actions: [
+          TextButton(
+            child: const Text('Tutup'),
+            onPressed: () => Navigator.pop(context),
           ),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext ctx) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return AppBar(
+      backgroundColor: Colors.teal,
+      elevation: 0,
+      leading: Builder(
+        builder: (c) => IconButton(
+          onPressed: () => Scaffold.of(c).openDrawer(),
+          icon: user != null && user.photoURL != null
+              ? CircleAvatar(
+                  radius: 16,
+                  backgroundImage: NetworkImage(user.photoURL!),
+                )
+              : const Icon(Icons.account_circle, color: Colors.white),
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+          onPressed: () {},
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings, color: Colors.white),
+          onPressed: () {},
         ),
       ],
     );
   }
 
-  Widget _buildAnalysisCard(String title, String subtitle) {
-    return Container(
-      height: 140,
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        borderRadius: BorderRadius.circular(12),
-      ),
+  Drawer _buildDrawer(BuildContext ctx) => Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            _drawerHeader(),
+            _drawerItem(ctx, Icons.home, 'Home', const HomePage()),
+            _drawerItem(ctx, Icons.calendar_today, 'Tanggal', const TanggalPage()),
+            _drawerItem(ctx, Icons.analytics, 'Analisis', const AnalisisPage()),
+            const Divider(),
+            ListTile(
+                leading: const Icon(Icons.settings),
+                title: const Text('Pengaturan'),
+                onTap: () => Navigator.pop(ctx)),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Keluar'),
+              onTap: () async {
+                // ── dialog konfirmasi ────────────────────────────────────
+                final confirm = await showDialog<bool>(
+                  context: ctx,
+                  builder: (dCtx) => AlertDialog(
+                    title: const Text('Konfirmasi'),
+                    content: const Text('Yakin mau keluar dari akun?'),
+                    actions: [
+                      TextButton(
+                        child: const Text('Batal'),
+                        onPressed: () => Navigator.pop(dCtx, false),
+                      ),
+                      ElevatedButton(
+                        child: const Text('Keluar'),
+                        onPressed: () => Navigator.pop(dCtx, true),
+                      ),
+                    ],
+                  ),
+                );
+
+                // kalau user pilih "Keluar"
+                if (confirm == true) {
+                  Navigator.pop(ctx); // tutup drawer
+
+                  await FirebaseAuth.instance.signOut();
+                  await gSignIn.signOut();
+
+                  if (ctx.mounted) {
+                    Navigator.of(ctx).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const OnboardingPage()),
+                      (route) => false,
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      );
+
+  Widget _drawerHeader() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return DrawerHeader(
+      decoration: const BoxDecoration(color: Colors.teal),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 2,
-            child: Center(
-              child: CustomPaint(
-                size: const Size(30, 25),
-                painter: TrianglePainter(),
-              ),
+          // Foto profil
+          user != null && user.photoURL != null
+              ? CircleAvatar(
+                  radius: 30,
+                  backgroundImage: NetworkImage(user.photoURL!),
+                )
+              : const CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, size: 40, color: Colors.teal),
+                ),
+
+          const SizedBox(height: 16),
+
+          // Nama
+          Text(
+            user?.displayName ?? 'Guest',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          Expanded(
-            flex: 1,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: const BoxDecoration(
-                    color: Colors.grey,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey[600],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+
+          // Email
+          Text(
+            user?.email ?? '',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
             ),
           ),
         ],
       ),
     );
   }
+
+  ListTile _drawerItem(BuildContext ctx, IconData icon, String label, Widget page) => ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        onTap: () {
+          Navigator.pop(ctx);
+          if (page.runtimeType != runtimeType) {
+            Navigator.pushReplacement(ctx, MaterialPageRoute(builder: (_) => page));
+          }
+        },
+      );
+
+  Widget _buildDateItem(String day, int done, int fail) {
+    final color = done > 0
+        ? Colors.teal
+        : fail > 0
+            ? Colors.redAccent
+            : Colors.grey[300];
+    return Column(
+      children: [Container(width: 40, height: 40, color: color), SizedBox(height: 8), Text(day)],
+    );
+  }
+
+  Widget _buildAnalysisCard(String title, double ratio) => Container(
+        height: 140,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('${(ratio * 100).toStringAsFixed(1)}%',
+                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(title, style: const TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
+      );
 }
 
 class TrianglePainter extends CustomPainter {
@@ -337,89 +423,50 @@ class TrianglePainter extends CustomPainter {
 }
 
 class PieChartPainter extends CustomPainter {
+  final double doneRatio; // 0‒1
+  final double failRatio; // 0‒1
+
+  PieChartPainter({
+    required this.doneRatio,
+    required this.failRatio,
+  });
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
+    final radius = size.width / 5.5;
 
-    final paint1 = Paint()
-      ..color = Colors.grey[400]!
+    final donePaint = Paint()
+      ..color = Colors.teal
       ..style = PaintingStyle.fill;
-
-    final paint2 = Paint()
-      ..color = Colors.grey[600]!
+    final failPaint = Paint()
+      ..color = Colors.redAccent
       ..style = PaintingStyle.fill;
+    final pendingPaint = Paint()..color = Colors.grey[600]!;
 
-    final paint3 = Paint()
-      ..color = Colors.grey[800]!
-      ..style = PaintingStyle.fill;
+    // sudut radian
+    final doneSweep = doneRatio * 2 * 3.1416;
+    final failSweep = failRatio * 2 * 3.1416;
+    final pendingSweep = 2 * 3.1416 - doneSweep - failSweep;
 
-    final borderPaint = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+    double start = -3.1416 / 2; // mulai dari atas
 
-    // Draw pie chart segments
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      0,
-      1.5,
-      true,
-      paint1,
-    );
+    // DONE
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), start, doneSweep, true, donePaint);
+    start += doneSweep;
 
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      1.5,
-      2.5,
-      true,
-      paint2,
-    );
+    // FAIL
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), start, failSweep, true, failPaint);
+    start += failSweep;
 
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      4.0,
-      2.28,
-      true,
-      paint3,
-    );
-
-    // Draw borders
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      0,
-      6.28,
-      false,
-      borderPaint,
-    );
-
-    // Draw dividing lines
-    canvas.drawLine(center, Offset(center.dx + radius, center.dy), borderPaint);
-    canvas.drawLine(center, Offset(center.dx - radius * 0.3, center.dy - radius * 0.95), borderPaint);
-    canvas.drawLine(center, Offset(center.dx - radius * 0.8, center.dy + radius * 0.6), borderPaint);
-
-    // Add "1st" text in the center
-    final textPainter = TextPainter(
-      text: const TextSpan(
-        text: '1st',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 16,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        center.dx - textPainter.width / 2,
-        center.dy - textPainter.height / 2,
-      ),
-    );
+    // PENDING
+    if (pendingSweep > 0) {
+      canvas.drawArc(
+          Rect.fromCircle(center: center, radius: radius), start, pendingSweep, true, pendingPaint);
+    }
   }
 
   @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant PieChartPainter old) =>
+      old.doneRatio != doneRatio || old.failRatio != failRatio;
 }

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
+import 'analisis_page.dart';
 import 'event_provider.dart';
 import 'event.dart';
 
@@ -20,6 +20,14 @@ class EventListScreen extends StatelessWidget {
     return Scaffold(
         appBar: AppBar(
           title: Text('All Events'),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.bar_chart),
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => AnalisisPage()));
+              },
+            ),
+          ],
         ),
         body: events.isEmpty
             ? Center(child: Text('No events added yet.'))
@@ -33,7 +41,9 @@ class EventListScreen extends StatelessWidget {
                   final count = titleCount[event.title]!;
 
                   Color? cardColor;
-                  if (count == 1) {
+                  if (event.isRecurring) {
+                    cardColor = Colors.deepOrange[100];
+                  } else if (count == 1) {
                     cardColor = Colors.yellow[100];
                   } else if (count >= 3 && count < 7) {
                     cardColor = Colors.orange[200];
@@ -42,32 +52,53 @@ class EventListScreen extends StatelessWidget {
                   }
 
                   return Card(
-                    margin:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     color: cardColor,
                     child: ListTile(
                       leading: event.imagePath != null
-                          ? Image.file(File(event.imagePath!),
-                              width: 50, height: 50, fit: BoxFit.cover)
+                          ? Image.file(File(event.imagePath!), width: 50, height: 50, fit: BoxFit.cover)
                           : Icon(Icons.event),
                       title: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(child: Text(event.title)),
-                          if (count >= 3)
+                          if (event.isRecurring)
                             Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.deepOrange,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Recurring',
+                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            )
+                          else if (count >= 3)
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.deepOrange,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
                                 'Frequent',
-                                style: TextStyle(
-                                    color: Colors.white, fontSize: 12),
+                                style: TextStyle(color: Colors.white, fontSize: 12),
                               ),
                             ),
+                        ],
+                      ),
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (value) {
+                          if (value == 'complete') {
+                            provider.updateEvent(event.copyWith(status: EventStatus.completed, point: 10));
+                          } else if (value == 'fail') {
+                            provider.updateEvent(event.copyWith(status: EventStatus.failed));
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(value: 'complete', child: Text('Tandai Selesai')),
+                          PopupMenuItem(value: 'fail', child: Text('Tandai Gagal')),
                         ],
                       ),
                     ),
